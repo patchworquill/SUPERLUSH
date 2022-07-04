@@ -7,8 +7,8 @@ int analogInputs[NUM_POTS];
 int analogInputsPrev[NUM_POTS];
 
 #define NUM_BUTTONS 10
-int buttons[NUM_BUTTONS];
-int buttonsPrev[NUM_BUTTONS];
+bool buttons[NUM_BUTTONS];
+bool buttonsPrev[NUM_BUTTONS];
 
 elapsedMillis timeout;  // Globally scoped - see comment above
 
@@ -26,14 +26,15 @@ CRGB ledsBottom[NUM_LEDS_BOTTOM];
 /************** PINOUT ******************
  *  ----- INPUTS -------
 // A0-A5 | POT
+// A4 - Center
 
 // 2-5 MICRO SWITCHES - Joystick
 // 8-13 MICRO SWITCHES
     // On until button is let go
 
 // INPUTS
-// 6 | LEDS_BOTTOM
-// 7 | LEDS_TOP
+// 7 | LEDS_BOTTOM
+// 6 | LEDS_TOP
 
 ******************************************/
 
@@ -49,12 +50,17 @@ CRGB ledsBottom[NUM_LEDS_BOTTOM];
 #define PB_5 11
 #define PB_6 13
 
-#define BRIGHTNESS          255
+#define LED_PIN_BOTTOM 7
+#define LED_PIN_TOP 6
+
+#define MAX_BRIGHTNESS     255
 #define FRAMES_PER_SECOND  120
 
 void setup()
 {
     
+    delay(3000); // For FastLED Recovery
+
     Serial.begin(115200);
     Serial.println("Initializing.");
     // Define switch pins 
@@ -73,24 +79,27 @@ void setup()
     pinMode(J_DOWN, INPUT_PULLUP); // DOWN
     pinMode(PB_6, INPUT_PULLUP);
 
-    FastLED.addLeds<NEOPIXEL, 6>(ledsBottom, NUM_LEDS_BOTTOM); // Bottom leds
-    FastLED.addLeds<NEOPIXEL, 7>(ledsTop, NUM_LEDS_TOP);
+    FastLED.addLeds<NEOPIXEL, LED_PIN_BOTTOM>(ledsBottom, NUM_LEDS_BOTTOM); // Bottom leds
+    FastLED.addLeds<NEOPIXEL, LED_PIN_TOP>(ledsTop, NUM_LEDS_TOP);
+
+    FastLED.setBrightness(MAX_BRIGHTNESS);
     
     // Read some initial values?
     // TODO: why is this here?
-    analogInputs[0] = analogRead(1);
-    analogInputs[1] = analogRead(2);
-    analogInputs[2] = analogRead(3);
-    analogInputs[3] = analogRead(4);
-    analogInputs[4] = analogRead(5);
-    analogInputs[5] = analogRead(6);
-    // read buttons
-    buttons[0] = digitalRead(PB_1);
-    buttons[1] = digitalRead(PB_2);
-    buttons[2] = digitalRead(PB_3);       
-    buttons[3] = digitalRead(PB_4); 
-    buttons[4] = digitalRead(PB_5); 
-    buttons[5] = digitalRead(PB_6);
+    // analogInputs[0] = analogRead(1);
+    // analogInputs[1] = analogRead(2);
+    // analogInputs[2] = analogRead(3);
+    // analogInputs[3] = analogRead(4);
+    // analogInputs[4] = analogRead(5);
+    // analogInputs[5] = analogRead(6);
+    // // read buttons
+    // buttons[0] = digitalRead(PB_1);
+    // buttons[1] = digitalRead(PB_2);
+    // buttons[2] = digitalRead(PB_3);       
+    // buttons[3] = digitalRead(PB_4); 
+    // buttons[4] = digitalRead(PB_5); 
+    // buttons[5] = digitalRead(PB_6);
+
     // read joystick
 
     Serial.println("Initialization complete.");
@@ -159,7 +168,39 @@ void nextPattern()
     gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE(gPatterns);
 }
 
-void loop() {
+int debounce(int reading, int lastButtonState){
+    // Variables will change:
+    int ledState = HIGH;         // the current state of the output pin
+    int buttonState = reading;             // the current reading from the input pin
+
+    // the following variables are unsigned longs because the time, measured in
+    // milliseconds, will quickly become a bigger number than can be stored in an int.
+    unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
+    unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
+
+        if (reading != lastButtonState) {
+        // reset the debouncing timer
+        lastDebounceTime = millis();
+    }
+
+    if ((millis() - lastDebounceTime) > debounceDelay) {
+        // whatever the reading is at, it's been there for longer than the debounce
+        // delay, so take it as the actual current state:
+
+        // if the button state has changed:
+        if (reading != buttonState) {
+        buttonState = reading;
+
+        // only toggle the LED if the new button state is HIGH
+        if (buttonState == HIGH) {
+            ledState = !ledState;
+        }
+        }
+    }
+    return reading;
+}
+
+void check_all_buttons() {
     // read pots
     // for (int i=0; i<analogInputs; i++){
     // Serial.println("Read line.");
@@ -178,14 +219,15 @@ void loop() {
     buttons[4] = digitalRead(PB_5); 
     buttons[5] = digitalRead(PB_6);
 
+    debounce(buttons[0], buttonsPrev[0]);
 
     // If there's a change in pot, send midi 
     for (int i=0; i < NUM_ANALOG_INPUTS; i++){
         if(analogInputsPrev[i] != analogInputs[i]) {
-            Serial.print("KNOB: ");
-            Serial.print(i);
-            Serial.print(analogInputs[i]);
-            Serial.print("\r\n");
+            Serial.println("KNOB: "+ String(i) + " - " + String(analogInputs[i]));
+            // Serial.print(i);
+            // Serial.print(analogInputs[i]);
+            // Serial.print("\r\n");
             flash_LEDs();
             // controlChange(0, 16, map(analogInputs[0], 0, 1024, 0, 126)); // Set the value of controller 10 on channel 0 to 65 
             // MidiUSB.flush(); 
@@ -196,10 +238,12 @@ void loop() {
     // TODO: use a less hack method for this. Could create less responsiveness
     for (int i=0; i < NUM_BUTTONS; i++){
         if(buttonsPrev[i] != buttons[i]){
-            Serial.print("BUTTON ");
-            Serial.print(i);
-            Serial.print(buttons[i]);
-            Serial.print("\r\n");
+            Serial.println("Button: "+ String(i) + " - " + String(buttons[i]));
+
+            // Serial.print("BUTTON ");
+            // Serial.print(i);
+            // Serial.print(buttons[i]);
+            // Serial.print("\r\n");
             flash_LEDs();
             
         }
@@ -221,5 +265,20 @@ void loop() {
     buttonsPrev[5] = buttons[5];
 
     delay(1000);
+}
+
+void loop() {
+    // check_all_buttons();
+
+    // Call the current pattern function once, updating the 'leds' array
+  gPatterns[gCurrentPatternNumber]();
+
+  // send the 'leds' array out to the actual LED strip
+  FastLED.show();  
+  // insert a delay to keep the framerate modest
+  //FastLED.delay(1000/FRAMES_PER_SECOND); 
+
+  // do some periodic updates
+  EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
 
 }
