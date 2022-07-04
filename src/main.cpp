@@ -1,84 +1,101 @@
-// Correctly reading all shift registers //Integrated FAST LED
-// Outputting all keys as midi //Outputting all pots as midi
-// Adds timeout after certain inactivity
-// Adds control of mist relay and fan transistors
-
 #include <Arduino.h>
-#include <FastLED.h> 
-#include "MIDIUSB.h" 
+#include <FastLED.h>
 #include <elapsedMillis.h>
 
-int analogInputs[4];
-int analogInputsOld[4];
-int midiButtons[3];
-int midiButtonsOld[3];
-elapsedMillis timeout;         // Globally scoped - see comment above
+#define NUM_POTS 6
+int analogInputs[NUM_POTS];
+int analogInputsPrev[NUM_POTS];
+
+#define NUM_BUTTONS 10
+int buttons[NUM_BUTTONS];
+int buttonsPrev[NUM_BUTTONS];
+
+elapsedMillis timeout;  // Globally scoped - see comment above
+
 #define TIMEOUTDELAY 180000    // Delay before goes to sleep
 #define TIMEOUTDELAYFANS 10000 // How much longer the fans stay on
 
 // First led strip, 200 leds, 50 leds in 4 rows 
-#define NUM_LEDS_TOP 200
+#define NUM_LEDS_TOP 100 // 98
 // Second strip on bottom, 98 leds, 49 in 2 rows 
-#define NUM_LEDS_BOTTOM 98
+#define NUM_LEDS_BOTTOM 80
 
 CRGB ledsTop[NUM_LEDS_TOP];
 CRGB ledsBottom[NUM_LEDS_BOTTOM];
 
-// The total number of keyboard keys to poll the shift registers 
-#define NUMKEYS 88
+/************** PINOUT ******************
+ *  ----- INPUTS -------
+// A0-A5 | POT
 
-// Width of pulse to trigger the shift register to read and latch. 
-#define PULSE_WIDTH_USEC 5
+// 2-5 MICRO SWITCHES - Joystick
+// 8-13 MICRO SWITCHES
+    // On until button is let go
 
-// Optional delay between shift register reads. 
-#define POLL_DELAY_MSEC 1
+// INPUTS
+// 6 | LEDS_BOTTOM
+// 7 | LEDS_TOP
 
-// States of each shift register input 
-bool keyState [NUMKEYS];
-bool oldKeyState[NUMKEYS];
+******************************************/
 
-int ploadPin = 9;        // Connects to Parallel load pin the 165
-int clockEnablePin = 10; // Connects to Clock Enable pin the 165 
-int dataPin = 12; // Connects to the Q7 pin the 165
-int clockPin = 13;       // Connects to the Clock pin the 165
+#define J_UP 3
+#define J_LEFT 2
+#define J_DOWN 12
+#define J_RIGHT 4
 
-#define BRIGHTNESS 96 
-#define FRAMES_PER_SECOND 120
+#define PB_1 5
+#define PB_2 8
+#define PB_3 9
+#define PB_4 10
+#define PB_5 11
+#define PB_6 13
+
+#define BRIGHTNESS          255
+#define FRAMES_PER_SECOND  120
 
 void setup()
 {
+    
     Serial.begin(115200);
+    Serial.println("Initializing.");
     // Define switch pins 
-    pinMode(3, INPUT_PULLUP); 
-    pinMode(4, INPUT_PULLUP); 
-    pinMode(8, INPUT_PULLUP);
-    pinMode(6, OUTPUT); // Mist relay 
-    pinMode(2,OUTPUT); //Fan transistor
-    digitalWrite(2, LOW);
-    digitalWrite(6, LOW);
-    // Initialize our digital pins... 
-    pinMode(ploadPin, OUTPUT); 
-    pinMode(clockEnablePin, OUTPUT); 
-    pinMode(clockPin, OUTPUT); 
-    pinMode(dataPin, INPUT);
-    FastLED.addLeds<NEOPIXEL, 7>(ledsBottom, NUM_LEDS_BOTTOM); // Bottom leds
-    FastLED.addLeds<NEOPIXEL, 5>(ledsTop, NUM_LEDS_TOP);       // Top leds 
-    //FastLED.setBrightness(10);
-    digitalWrite(clockPin, LOW);
-    digitalWrite(ploadPin, HIGH);
-    // Parallel load the registers parallel_load();
-    // initial read pots
+    
+    // Joystick
+    pinMode(J_LEFT, INPUT_PULLUP); // LEFT
+    pinMode(J_UP, INPUT_PULLUP); // UP
+    pinMode(J_RIGHT, INPUT_PULLUP); // RIGHT
+    pinMode(PB1, INPUT_PULLUP); 
 
+    // Button Pad
+    pinMode(PB_2, INPUT_PULLUP); 
+    pinMode(PB_3, INPUT_PULLUP); 
+    pinMode(PB_4, INPUT_PULLUP); 
+    pinMode(PB_5, INPUT_PULLUP);
+    pinMode(J_DOWN, INPUT_PULLUP); // DOWN
+    pinMode(PB_6, INPUT_PULLUP);
+
+    FastLED.addLeds<NEOPIXEL, 6>(ledsBottom, NUM_LEDS_BOTTOM); // Bottom leds
+    FastLED.addLeds<NEOPIXEL, 7>(ledsTop, NUM_LEDS_TOP);
+    
+    // Read some initial values?
+    // TODO: why is this here?
     analogInputs[0] = analogRead(1);
     analogInputs[1] = analogRead(2);
     analogInputs[2] = analogRead(3);
     analogInputs[3] = analogRead(4);
+    analogInputs[4] = analogRead(5);
+    analogInputs[5] = analogRead(6);
     // read buttons
-    midiButtons[0] = digitalRead(3);
-    midiButtons[1] = digitalRead(4);
-    midiButtons[2] = digitalRead(8);
+    buttons[0] = digitalRead(PB_1);
+    buttons[1] = digitalRead(PB_2);
+    buttons[2] = digitalRead(PB_3);       
+    buttons[3] = digitalRead(PB_4); 
+    buttons[4] = digitalRead(PB_5); 
+    buttons[5] = digitalRead(PB_6);
+    // read joystick
+
+    Serial.println("Initialization complete.");
 }
-// List of patterns to cycle through. Each is defined as a separate function below. 
+
 typedef void (*SimplePatternList[])();
 
 uint8_t gHue = 0;                  // rotating "base color" used by many of the patterns
@@ -94,6 +111,7 @@ void confetti()
     // ledsBottom[pos] += CHSV( gHue + random8(64), 200, 150); 
 }
 
+// Basically a screensaver
 void sinelon()
 {
     // a colored dot sweeping back and forth, with fading trails 
@@ -102,244 +120,36 @@ void sinelon()
     ledsTop[pos] += CHSV(gHue, 255, 192);
 }
 
-SimplePatternList gPatterns = {confetti, sinelon};
+void flash_LEDs(){
+    for(int i = 0; i < 44; i++){
+        ledsBottom[i + 3] += CHSV( gHue + random8(64), 230, 200);
+        ledsBottom[i + 3 - 1] += CHSV( gHue + random8(64), 230, 20);
+        ledsBottom[i + 3 + 1] += CHSV( gHue + random8(64), 230, 20);
 
-void noteOn(byte channel, byte pitch, byte velocity) {
-    midiEventPacket_t noteOn = {0x09, 0x90 | channel, pitch, velocity};
-    MidiUSB.sendMIDI(noteOn);
-    timeout = 0; // Reset timer when input detected gCurrentPatternNumber = 0; //set pattern to spots
-}
-void noteOff(byte channel, byte pitch, byte velocity) {
-    midiEventPacket_t noteOff = {0x08, 0x80 | channel, pitch, velocity};
-    MidiUSB.sendMIDI(noteOff);
-    timeout = 0; // Reset timer when input detected gCurrentPatternNumber = 0; //set pattern to spots
-}
-
-void controlChange(byte channel, byte control, byte value) {
-    midiEventPacket_t event = {0x0B, 0xB0 | channel, control, value};
-    MidiUSB.sendMIDI(event);
-    // timeout = 0; //Reset timer when input detected
+        ledsBottom[-i + 99 - 3] += CHSV( gHue + random8(64), 230, 200);
+        ledsBottom[-i + 99 - 3 + 1] += CHSV( gHue + random8(64), 230, 20);
+        ledsBottom[-i + 99 - 3 - 1] += CHSV( gHue + random8(64), 230, 20);
+    }
 }
 
-void loop()
-{
+SimplePatternList gPatterns = {confetti}; //sinelon
 
-    digitalWrite(6, HIGH); // Misters digitalWrite(2, HIGH); //Fans
-    if (timeout > TIMEOUTDELAY)
-    {
-        digitalWrite(6, LOW);
-    }
-    if (timeout > TIMEOUTDELAYFANS + TIMEOUTDELAY)
-    {
-        digitalWrite(2, LOW);
-        gCurrentPatternNumber = 1;
-    }
-    // read pots
-    analogInputs[0] = analogRead(1);
-    analogInputs[1] = analogRead(2);
-    analogInputs[2] = analogRead(3);
-    analogInputs[3] = analogRead(4);
-    // read buttons
-    midiButtons[0] = digitalRead(3);
-    midiButtons[1] = digitalRead(4);
-    midiButtons[2] = digitalRead(8);
-    // Call the current pattern function once, updating the 'leds' array gPatterns[gCurrentPatternNumber]();
-    // send the 'leds' array out to the actual LED strip FastLED.show();
-    // insert a delay to keep the framerate modest //FastLED.delay(1000/FRAMES_PER_SECOND);
-    // do some periodic updates
-    EVERY_N_MILLISECONDS(20) { gHue++; } // slowly cycle the "base color" through the rainbow
-    // EVERY_N_SECONDS( 10 ) { nextPattern(); } // change patterns periodically
-    // Parallel load the registers parallel_load();
-    // Read the registers read_shift_regs();
+// void noteOn(byte channel, byte pitch, byte velocity) {
+//     midiEventPacket_t noteOn = {0x09, 0x90 | channel, pitch, velocity};
+//     MidiUSB.sendMIDI(noteOn);
+//     timeout = 0; // Reset timer when input detected gCurrentPatternNumber = 0; //set pattern to spots
+// }
+// void noteOff(byte channel, byte pitch, byte velocity) {
+//     midiEventPacket_t noteOff = {0x08, 0x80 | channel, pitch, velocity};
+//     MidiUSB.sendMIDI(noteOff);
+//     timeout = 0; // Reset timer when input detected gCurrentPatternNumber = 0; //set pattern to spots
+// }
 
-    /*
-    //If there was a change in state, display which ones changed.
-
-    for(int i = 0; i < NUMKEYS; i++) {
-    if(keyState[i] != oldKeyState[i]) {
-    display_pin_values(); }
-    } */
-
-    delay(POLL_DELAY_MSEC);
-    // Send MIDI signals
-    for (int i = 0; i < NUMKEYS; i++)
-    {
-        if (keyState[i] == 1 && oldKeyState[i] == 0)
-        {
-            noteOn(0, 87 - i, 64); // Set note to send and flip key order 
-            /*
-            Serial.print("Button ");
-            Serial.print(i);
-            Serial.print(" is on.");
-            Serial.print("\r\n");
-            */
-            MidiUSB.flush();
-        }
-        else if (keyState[i] == 0 && oldKeyState[i] == 1)
-        {
-            noteOff(0, 87 - i, 64); // Set note to send and flip key oder 
-            /*
-            Serial.print("Button ");
-            Serial.print(i);
-            Serial.print(" is off.");
-            Serial.print("\r\n");
-            */
-            MidiUSB.flush();
-        }
-    }
-    // Set old values to new
-    for (int i = 0; i < NUMKEYS; i++) {
-        oldKeyState[i] = keyState[i];
-    }
-    // If there's a change in pot, send midi 
-    if(analogInputsOld[0] != analogInputs[0]) {
-    // Serial.print(analogInputs [0]);
-    // Serial.print("\r\n");
-    controlChange(0, 16, map(analogInputs[0], 0, 1024, 0, 126)); // Set the value of controller 10 on channel 0 to 65 
-    MidiUSB.flush();
-    }
-
-    if (analogInputsOld[1] != analogInputs[1])
-    {
-        // Serial.print(analogInputs [1]);
-        // Serial.print("\r\n");
-        controlChange(0, 17, map(analogInputs[1], 0, 1024, 0, 126)); // Set the value of controller 10 on channel 0 to 65 
-        MidiUSB.flush();
-    }
-    if (analogInputsOld[2] != analogInputs[2])
-    {
-        // Serial.print(analogInputs [2]);
-        // Serial.print("\r\n");
-        controlChange(0, 18, map(analogInputs[2], 0, 1024, 0, 126)); // Set the value of controller 10 on channel 0 to 65
-        MidiUSB.flush();
-    }
-    if (analogInputsOld[3] != analogInputs[3])
-    {
-        // Serial.print(analogInputs [3]);
-        // Serial.print("\r\n");
-        controlChange(0, 19, map(analogInputs[3], 0, 1024, 0, 126)); // Set the value of controller 10 on channel 0 to 65 
-        MidiUSB.flush();
-    }
-    // if there's a change in button, send midi change 
-    if(midiButtons[0] != midiButtonsOld[0])
-    {
-        controlChange(1, 21, map(midiButtons[0], 0, 1, 0, 127)); // Set the value of controller 10 on channel 0 to 65
-
-        Serial.print(map(midiButtons[0], 0, 1, 0, 127));
-        MidiUSB.flush();
-    }
-    if (midiButtons[1] != midiButtonsOld[1])
-    {
-        controlChange(1, 22, map(midiButtons[1], 0, 1, 0, 127)); // Set the value of controller 10 on channel 0 to 65
-        Serial.print(map(midiButtons[1], 0, 1, 0, 127));
-        MidiUSB.flush();
-    }
-    if (midiButtons[2] != midiButtonsOld[2])
-    {
-        controlChange(0, 23, map(midiButtons[2], 0, 1, 0, 127)); // Set the value of controller 10 on channel 0 to 65
-        Serial.print(map(midiButtons[2], 0, 1, 0, 127));
-        MidiUSB.flush();
-    }
-// Set old analog values 
-analogInputsOld[0] = analogInputs[0]; 
-analogInputsOld[1] = analogInputs[1]; 
-analogInputsOld[2] = analogInputs[2]; 
-analogInputsOld[3] = analogInputs[3];
-midiButtonsOld[0] = midiButtons[0];
-midiButtonsOld[1] = midiButtons[1];
-midiButtonsOld[2] = midiButtons[2];
-// Set LEDS based on key presses 
-for(int i = 0; i < 44; i++)
-{
-    if (keyState[i])
-    {
-        ledsTop[i + 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsTop[i + 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[i + 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[-i + 99 - 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsTop[-i + 99 - 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[-i + 99 - 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-        ///*
-
-        ledsTop[i + 100 + 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsTop[i + 100 + 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[i + 100 + 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[-i + 199 - 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsTop[-i + 199 - 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[-i + 199 - 3 - 1] += CHSV(gHue + random8(64), 230, 20); //*/
-        // Flash Bottom
-        ledsBottom[i + 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsBottom[i + 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsBottom[i + 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsBottom[-i + 99 - 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsBottom[-i + 99 - 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsBottom[-i + 99 - 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-    }
-
-    if (keyState[i + 44])
-    {
-        ///*
-        ledsTop[i + 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsTop[i + 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[i + 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[-i + 99 - 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsTop[-i + 99 - 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[-i + 99 - 3 - 1] += CHSV(gHue + random8(64), 230, 20); //*/
-        ledsTop[i + 100 + 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsTop[i + 100 + 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[i + 100 + 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[-i + 199 - 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsTop[-i + 199 - 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsTop[-i + 199 - 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-        // Flash Bottom
-        ledsBottom[i + 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsBottom[i + 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-
-        ledsBottom[i + 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsBottom[-i + 99 - 3] += CHSV(gHue + random8(64), 230, 200);
-        ledsBottom[-i + 99 - 3 + 1] += CHSV(gHue + random8(64), 230, 20);
-        ledsBottom[-i + 99 - 3 - 1] += CHSV(gHue + random8(64), 230, 20);
-    }
-}
-}
-void parallel_load()
-{
-    // Trigger a parallel Load to latch the state of the register inputs 
-    digitalWrite(clockEnablePin, HIGH);
-    digitalWrite(ploadPin, LOW);
-    delayMicroseconds(PULSE_WIDTH_USEC);
-    digitalWrite(ploadPin, HIGH);
-    digitalWrite(clockEnablePin, LOW);
-}
-void read_shift_regs()
-{
-    // Loop to read each input from registers 
-    for(int i = 0; i < NUMKEYS; i++)
-    {
-        // Set state of current key 
-        keyState[i] = digitalRead(dataPin);
-        //  Pulse the Clock (rising edge shifts the next bit). 
-        digitalWrite(clockPin, HIGH); 
-        delayMicroseconds(PULSE_WIDTH_USEC); 
-        digitalWrite(clockPin, LOW);
-    }
-}
-/* Dump the list of zones along with their current status. */
-void display_pin_values()
-{
-    for (int i = 0; i < NUMKEYS; i++)
-    {
-
-        if (keyState[i] && keyState[i] == 1)
-        {
-            Serial.print("Button");
-            Serial.print(i);
-            Serial.print(" ");
-            // ledsTop[i] += CHSV( gHue + random8(64), 230, 200);
-        }
-    }
-    Serial.print("\r\n");
-}
+// void controlChange(byte channel, byte control, byte value) {
+//     midiEventPacket_t event = {0x0B, 0xB0 | channel, control, value};
+//     MidiUSB.sendMIDI(event);
+//     // timeout = 0; //Reset timer when input detected
+// }
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
@@ -349,3 +159,67 @@ void nextPattern()
     gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE(gPatterns);
 }
 
+void loop() {
+    // read pots
+    // for (int i=0; i<analogInputs; i++){
+    // Serial.println("Read line.");
+    analogInputs[0] = analogRead(1);
+    analogInputs[1] = analogRead(2);
+    analogInputs[2] = analogRead(3);
+    analogInputs[3] = analogRead(4);
+    analogInputs[4] = analogRead(5);
+    analogInputs[5] = analogRead(6);
+
+    // read buttons
+    buttons[0] = digitalRead(PB_1);
+    buttons[1] = digitalRead(PB_2);
+    buttons[2] = digitalRead(PB_3);       
+    buttons[3] = digitalRead(PB_4); 
+    buttons[4] = digitalRead(PB_5); 
+    buttons[5] = digitalRead(PB_6);
+
+
+    // If there's a change in pot, send midi 
+    for (int i=0; i < NUM_ANALOG_INPUTS; i++){
+        if(analogInputsPrev[i] != analogInputs[i]) {
+            Serial.print("KNOB: ");
+            Serial.print(i);
+            Serial.print(analogInputs[i]);
+            Serial.print("\r\n");
+            flash_LEDs();
+            // controlChange(0, 16, map(analogInputs[0], 0, 1024, 0, 126)); // Set the value of controller 10 on channel 0 to 65 
+            // MidiUSB.flush(); 
+        }
+        
+    }
+
+    // TODO: use a less hack method for this. Could create less responsiveness
+    for (int i=0; i < NUM_BUTTONS; i++){
+        if(buttonsPrev[i] != buttons[i]){
+            Serial.print("BUTTON ");
+            Serial.print(i);
+            Serial.print(buttons[i]);
+            Serial.print("\r\n");
+            flash_LEDs();
+            
+        }
+    }
+
+    //Set old analog values
+    analogInputsPrev[0] = analogInputs[0];
+    analogInputsPrev[1] = analogInputs[1];
+    analogInputsPrev[2] = analogInputs[2];
+    analogInputsPrev[3] = analogInputs[3];
+    analogInputsPrev[4] = analogInputs[4];
+    analogInputsPrev[5] = analogInputs[5];
+
+    buttonsPrev[0] = buttons[0];
+    buttonsPrev[1] = buttons[1];
+    buttonsPrev[2] = buttons[2];
+    buttonsPrev[3] = buttons[3];
+    buttonsPrev[4] = buttons[4];
+    buttonsPrev[5] = buttons[5];
+
+    delay(1000);
+
+}
