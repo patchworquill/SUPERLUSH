@@ -80,10 +80,29 @@ void setup()
 }
 // List of patterns to cycle through. Each is defined as a separate function below. 
 typedef void (*SimplePatternList[])();
-SimplePatternList gPatterns = {confetti, sinelon};
 
 uint8_t gHue = 0;                  // rotating "base color" used by many of the patterns
 uint8_t gCurrentPatternNumber = 0; // Index number of which pattern is current
+
+void confetti()
+{
+    // random colored speckles that blink in and fade smoothly 
+    fadeToBlackBy( ledsTop, NUM_LEDS_TOP, 30); 
+    fadeToBlackBy( ledsBottom, NUM_LEDS_BOTTOM, 20);
+    int pos = random16(NUM_LEDS_TOP);
+    ledsTop[pos] += CHSV(gHue + random8(64), 200, 150);
+    // ledsBottom[pos] += CHSV( gHue + random8(64), 200, 150); 
+}
+
+void sinelon()
+{
+    // a colored dot sweeping back and forth, with fading trails 
+    fadeToBlackBy( ledsTop, NUM_LEDS_TOP, 20);
+    int pos = beatsin16(13, 0, NUM_LEDS_TOP - 1);
+    ledsTop[pos] += CHSV(gHue, 255, 192);
+}
+
+SimplePatternList gPatterns = {confetti, sinelon};
 
 void noteOn(byte channel, byte pitch, byte velocity) {
     midiEventPacket_t noteOn = {0x09, 0x90 | channel, pitch, velocity};
@@ -330,20 +349,3 @@ void nextPattern()
     gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE(gPatterns);
 }
 
-void confetti()
-{
-    // random colored speckles that blink in and fade smoothly 
-    fadeToBlackBy( ledsTop, NUM_LEDS_TOP, 30); 
-    fadeToBlackBy( ledsBottom, NUM_LEDS_BOTTOM, 20);
-    int pos = random16(NUM_LEDS_TOP);
-    ledsTop[pos] += CHSV(gHue + random8(64), 200, 150);
-    // ledsBottom[pos] += CHSV( gHue + random8(64), 200, 150); 
-}
-
-void sinelon()
-{
-    // a colored dot sweeping back and forth, with fading trails 
-    fadeToBlackBy( ledsTop, NUM_LEDS_TOP, 20);
-    int pos = beatsin16(13, 0, NUM_LEDS_TOP - 1);
-    ledsTop[pos] += CHSV(gHue, 255, 192);
-}
