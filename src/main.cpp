@@ -43,12 +43,12 @@ CRGB ledsBottom[NUM_LEDS_BOTTOM];
 #define J_DOWN 12
 #define J_RIGHT 4
 
-#define PB_1 5
-#define PB_2 8
-#define PB_3 9
-#define PB_4 10
-#define PB_5 11
-#define PB_6 13
+#define PB_1 5 // might be fucked
+#define PB_2 8 // 
+#define PB_3 9 // 
+#define PB_4 10 // might be fucked
+#define PB_5 11 
+#define PB_6 13 
 
 #define LED_PIN_BOTTOM 7
 #define LED_PIN_TOP 6
@@ -69,38 +69,21 @@ void setup()
     pinMode(J_LEFT, INPUT_PULLUP); // LEFT
     pinMode(J_UP, INPUT_PULLUP); // UP
     pinMode(J_RIGHT, INPUT_PULLUP); // RIGHT
-    pinMode(PB1, INPUT_PULLUP); 
+    pinMode(J_DOWN, INPUT_PULLUP); // DOWN
+    
 
     // Button Pad
+    pinMode(PB_1, INPUT_PULLUP);
     pinMode(PB_2, INPUT_PULLUP); 
     pinMode(PB_3, INPUT_PULLUP); 
     pinMode(PB_4, INPUT_PULLUP); 
-    pinMode(PB_5, INPUT_PULLUP);
-    pinMode(J_DOWN, INPUT_PULLUP); // DOWN
+    // pinMode(PB_5, INPUT_PULLUP);
     pinMode(PB_6, INPUT_PULLUP);
 
     FastLED.addLeds<NEOPIXEL, LED_PIN_BOTTOM>(ledsBottom, NUM_LEDS_BOTTOM); // Bottom leds
     FastLED.addLeds<NEOPIXEL, LED_PIN_TOP>(ledsTop, NUM_LEDS_TOP);
 
     FastLED.setBrightness(MAX_BRIGHTNESS);
-    
-    // Read some initial values?
-    // TODO: why is this here?
-    // analogInputs[0] = analogRead(1);
-    // analogInputs[1] = analogRead(2);
-    // analogInputs[2] = analogRead(3);
-    // analogInputs[3] = analogRead(4);
-    // analogInputs[4] = analogRead(5);
-    // analogInputs[5] = analogRead(6);
-    // // read buttons
-    // buttons[0] = digitalRead(PB_1);
-    // buttons[1] = digitalRead(PB_2);
-    // buttons[2] = digitalRead(PB_3);       
-    // buttons[3] = digitalRead(PB_4); 
-    // buttons[4] = digitalRead(PB_5); 
-    // buttons[5] = digitalRead(PB_6);
-
-    // read joystick
 
     Serial.println("Initialization complete.");
 }
@@ -200,85 +183,131 @@ int debounce(int reading, int lastButtonState){
     return reading;
 }
 
-void check_all_buttons() {
-    // read pots
-    // for (int i=0; i<analogInputs; i++){
-    // Serial.println("Read line.");
+void read_knobs() {
     analogInputs[0] = analogRead(1);
-    analogInputs[1] = analogRead(2);
-    analogInputs[2] = analogRead(3);
-    analogInputs[3] = analogRead(4);
-    analogInputs[4] = analogRead(5);
-    analogInputs[5] = analogRead(6);
 
-    // read buttons
-    buttons[0] = digitalRead(PB_1);
-    buttons[1] = digitalRead(PB_2);
-    buttons[2] = digitalRead(PB_3);       
-    buttons[3] = digitalRead(PB_4); 
-    buttons[4] = digitalRead(PB_5); 
-    buttons[5] = digitalRead(PB_6);
-
-    debounce(buttons[0], buttonsPrev[0]);
-
-    // If there's a change in pot, send midi 
     for (int i=0; i < NUM_ANALOG_INPUTS; i++){
         if(analogInputsPrev[i] != analogInputs[i]) {
             Serial.println("KNOB: "+ String(i) + " - " + String(analogInputs[i]));
+            // Serial.print("KNOBW:");
             // Serial.print(i);
             // Serial.print(analogInputs[i]);
             // Serial.print("\r\n");
-            flash_LEDs();
             // controlChange(0, 16, map(analogInputs[0], 0, 1024, 0, 126)); // Set the value of controller 10 on channel 0 to 65 
             // MidiUSB.flush(); 
         }
         
     }
 
-    // TODO: use a less hack method for this. Could create less responsiveness
+    analogInputsPrev[0] = analogInputs[0];
+
+}
+
+
+void read_buttons() {
+    // read buttons
+    buttons[0] = digitalRead(PB_1);
+    buttons[1] = digitalRead(PB_2);
+    buttons[2] = digitalRead(PB_3);       
+    buttons[3] = digitalRead(PB_4); 
+    // buttons[4] = digitalRead(PB_5); 
+    buttons[5] = digitalRead(PB_6);
+
+    // debounce(buttons[0], buttonsPrev[0]);
+
     for (int i=0; i < NUM_BUTTONS; i++){
         if(buttonsPrev[i] != buttons[i]){
-            Serial.println("Button: "+ String(i) + " - " + String(buttons[i]));
-
+            Serial.println("Button: "+ String(i+1) + " - " + String(buttons[i]));
             // Serial.print("BUTTON ");
             // Serial.print(i);
             // Serial.print(buttons[i]);
-            // Serial.print("\r\n");
-            flash_LEDs();
-            
+            // Serial.print("\r\n"); 
         }
+        buttonsPrev[i] = buttons[i];
     }
 
-    //Set old analog values
-    analogInputsPrev[0] = analogInputs[0];
-    analogInputsPrev[1] = analogInputs[1];
-    analogInputsPrev[2] = analogInputs[2];
-    analogInputsPrev[3] = analogInputs[3];
-    analogInputsPrev[4] = analogInputs[4];
-    analogInputsPrev[5] = analogInputs[5];
-
-    buttonsPrev[0] = buttons[0];
-    buttonsPrev[1] = buttons[1];
-    buttonsPrev[2] = buttons[2];
-    buttonsPrev[3] = buttons[3];
-    buttonsPrev[4] = buttons[4];
-    buttonsPrev[5] = buttons[5];
-
-    delay(1000);
 }
 
 void loop() {
-    // check_all_buttons();
-
     // Call the current pattern function once, updating the 'leds' array
-  gPatterns[gCurrentPatternNumber]();
+    gPatterns[gCurrentPatternNumber]();
 
-  // send the 'leds' array out to the actual LED strip
-  FastLED.show();  
-  // insert a delay to keep the framerate modest
-  //FastLED.delay(1000/FRAMES_PER_SECOND); 
+    // send the 'leds' array out to the actual LED strip
+    FastLED.show();  
+    // insert a delay to keep the framerate modest
+    //FastLED.delay(1000/FRAMES_PER_SECOND); 
 
-  // do some periodic updates
-  EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
+    // do some periodic updates
+    EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
 
+    // check_all_buttons();
+    read_buttons();
+    read_knobs();
 }
+
+
+// void check_all_buttons() {
+//     // read pots
+//     // for (int i=0; i<analogInputs; i++){
+//     // Serial.println("Read line.");
+//     analogInputs[0] = analogRead(1);
+//     analogInputs[1] = analogRead(2);
+//     analogInputs[2] = analogRead(3);
+//     analogInputs[3] = analogRead(4);
+//     analogInputs[4] = analogRead(5);
+//     analogInputs[5] = analogRead(6);
+
+//     // read buttons
+//     buttons[0] = digitalRead(PB_1);
+//     buttons[1] = digitalRead(PB_2);
+//     buttons[2] = digitalRead(PB_3);       
+//     buttons[3] = digitalRead(PB_4); 
+//     buttons[4] = digitalRead(PB_5); 
+//     buttons[5] = digitalRead(PB_6);
+
+//     debounce(buttons[0], buttonsPrev[0]);
+
+//     // If there's a change in pot, send midi 
+//     for (int i=0; i < NUM_ANALOG_INPUTS; i++){
+//         if(analogInputsPrev[i] != analogInputs[i]) {
+//             Serial.println("KNOB: "+ String(i) + " - " + String(analogInputs[i]));
+//             // Serial.print(i);
+//             // Serial.print(analogInputs[i]);
+//             // Serial.print("\r\n");
+//             flash_LEDs();
+//             // controlChange(0, 16, map(analogInputs[0], 0, 1024, 0, 126)); // Set the value of controller 10 on channel 0 to 65 
+//             // MidiUSB.flush(); 
+//         }
+        
+//     }
+
+//     // TODO: use a less hack method for this. Could create less responsiveness
+//     for (int i=0; i < NUM_BUTTONS; i++){
+//         if(buttonsPrev[i] != buttons[i]){
+//             int button_name = i+1;
+//             Serial.println("Button: "+ String(button_name) + " - " + String(buttons[i]));
+
+//             // Serial.print("BUTTON ");
+//             // Serial.print(i);
+//             // Serial.print(buttons[i]);
+//             // Serial.print("\r\n");
+//         }
+//     }
+
+//     //Set old analog values
+//     analogInputsPrev[0] = analogInputs[0];
+//     analogInputsPrev[1] = analogInputs[1];
+//     analogInputsPrev[2] = analogInputs[2];
+//     analogInputsPrev[3] = analogInputs[3];
+//     analogInputsPrev[4] = analogInputs[4];
+//     analogInputsPrev[5] = analogInputs[5];
+
+//     buttonsPrev[0] = buttons[0];
+//     buttonsPrev[1] = buttons[1];
+//     buttonsPrev[2] = buttons[2];
+//     buttonsPrev[3] = buttons[3];
+//     buttonsPrev[4] = buttons[4];
+//     buttonsPrev[5] = buttons[5];
+
+//     delay(1000);
+// }
