@@ -18,5 +18,14 @@ digital pin 6 and 7 to addressable LEDs
   - [ ] Get the Joystick Reading
 - [x] Get the Debounce function working
   - [ ] Get it working perfectly
+- [x] Get the MIDI sending through Hairless -> loopMIDI
+  - https://create.arduino.cc/projecthub/sadreactonly/unopad-arduino-midi-controller-with-ableton-67ea75
 - [ ] Get the Buttons sending MIDI Notes
 - [ ] Get the Knobs Sending MIDI Notes / CCs
+
+---
+
+## Software
+- Primarily following [this tutorial](https://create.arduino.cc/projecthub/sadreactonly/unopad-arduino-midi-controller-with-ableton-67ea75)
+- Using Hairless Serial to MIDI Bridge
+- Using loopMIDI for Virtual MIDI Loopback

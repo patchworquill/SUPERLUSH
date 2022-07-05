@@ -3,6 +3,9 @@
 		{
 			"name": "SUPERLUSH",
 			"path": "."
+		},
+		{
+			"path": "../../../Code/Python/serialmidi"
 		}
 	],
 	"settings": {}

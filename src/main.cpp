@@ -1,39 +1,57 @@
 #include <Arduino.h>
+#include "Buttons.h"
 #include <FastLED.h>
-#include <elapsedMillis.h>
 
-#define NUM_POTS 6
-int analogInputs[NUM_POTS];
-int analogInputsPrev[NUM_POTS];
+
+//------Notes-------------
+#define NOTE_ONE 0
+#define NOTE_TWO 12
+#define NOTE_THREE 24
+#define NOTE_FOUR 36
+#define NOTE_FIVE 48
+#define NOTE_SIX 60
+#define NOTE_SEVEN 72
+#define NOTE_EIGHT 84
+#define NOTE_NINE 96
+#define NOTE_TEN 108
+
+#define NOTE_ON_CMD 0x90
+#define NOTE_OFF_CMD 0x80
+#define CC_CMD 0xB0
+#define MAX_MIDI_VELOCITY 127
+
+//------------------------
+
+#define NUM_KNOBS 6
+int analogInputs[NUM_KNOBS];
+int analogInputsPrev[NUM_KNOBS];
 
 #define NUM_BUTTONS 10
 bool buttons[NUM_BUTTONS];
 bool buttonsPrev[NUM_BUTTONS];
 
-// the format of the message to send Via serial 
-typedef union {
-    struct
-    {
-        uint8_t command;
-        uint8_t channel;
-        uint8_t data2;
-        uint8_t data3;
-    } msg;
-    uint8_t raw[4];
-} t_midiMsg;
 
-#define MIDI_COMMAND_CONTROL_CHANGE 0xB0
-#define MIDI_COMMAND_NOTE_ON 0x90
-#define MIDI_COMMAND_NOTE_OF 0x80
+Button Button1(2, NOTE_ONE);
+Button Button2(3, NOTE_TWO);
+Button Button3(4, NOTE_THREE);
+Button Button4(5, NOTE_FOUR);
+Button Button5(8, NOTE_FIVE);
+Button Button6(9, NOTE_SIX);
+Button Button7(10, NOTE_SEVEN);
+Button Button8(11, NOTE_EIGHT);
+Button Button9(12, NOTE_NINE);
+Button Button10(13, NOTE_TEN);
 
-#define CC MIDI_COMMAND_CONTROL_CHANGE
-#define ON MIDI_COMMAND_NOTE_ON
-#define NO MIDI_COMMAND_NOTE_OF
+Button *Buttons[] {&Button1,&Button2,&Button3,&Button4,&Button5,&Button6,&Button7,&Button8,&Button9,&Button10};
 
-elapsedMillis timeout;  // Globally scoped - see comment above
+Knob Knob1(0, 20);
+Knob Knob2(1, 21);
+Knob Knob3(2, 22);
+Knob Knob4(3, 23);
+Knob Knob5(4, 24);
+Knob Knob6(5, 25);
 
-#define TIMEOUTDELAY 180000    // Delay before goes to sleep
-#define TIMEOUTDELAYFANS 10000 // How much longer the fans stay on
+Knob *Knobs[] {&Knob1,&Knob2,&Knob3,&Knob4,&Knob5,&Knob6};
 
 // First led strip, 200 leds, 50 leds in 4 rows 
 #define NUM_LEDS_TOP 100 // 98
@@ -58,54 +76,23 @@ CRGB ledsBottom[NUM_LEDS_BOTTOM];
 
 ******************************************/
 
-#define J_UP 3
-#define J_LEFT 2
-#define J_DOWN 12
-#define J_RIGHT 4
+// #define J_UP 3
+// #define J_LEFT 2
+// #define J_DOWN 12
+// #define J_RIGHT 4
 
-#define PB_1 5 // might be fucked
-#define PB_2 8 // 
-#define PB_3 9 // 
-#define PB_4 10 // might be fucked
-#define PB_5 11 
-#define PB_6 13 
+// #define PB_1 5 // might be fucked
+// #define PB_2 8 // 
+// #define PB_3 9 // 
+// #define PB_4 10 // might be fucked
+// #define PB_5 11 
+// #define PB_6 13 
 
 #define LED_PIN_BOTTOM 7
 #define LED_PIN_TOP 6
 
 #define MAX_BRIGHTNESS     255
 #define FRAMES_PER_SECOND  120
-
-void setup()
-{
-    // delay(3000); // For FastLED Recovery
-
-    Serial.begin(115200);
-    // Serial.println("Initializing.");
-    // Define switch pins 
-    
-    // Joystick
-    pinMode(J_LEFT, INPUT_PULLUP); // LEFT
-    pinMode(J_UP, INPUT_PULLUP); // UP
-    pinMode(J_RIGHT, INPUT_PULLUP); // RIGHT
-    pinMode(J_DOWN, INPUT_PULLUP); // DOWN
-    
-
-    // Button Pad
-    pinMode(PB_1, INPUT_PULLUP);
-    pinMode(PB_2, INPUT_PULLUP); 
-    pinMode(PB_3, INPUT_PULLUP); 
-    pinMode(PB_4, INPUT_PULLUP); 
-    // pinMode(PB_5, INPUT_PULLUP);
-    pinMode(PB_6, INPUT_PULLUP);
-
-    FastLED.addLeds<NEOPIXEL, LED_PIN_BOTTOM>(ledsBottom, NUM_LEDS_BOTTOM); // Bottom leds
-    FastLED.addLeds<NEOPIXEL, LED_PIN_TOP>(ledsTop, NUM_LEDS_TOP);
-
-    FastLED.setBrightness(MAX_BRIGHTNESS);
-
-    // Serial.println("Initialization complete.");
-}
 
 typedef void (*SimplePatternList[])();
 
@@ -145,22 +132,77 @@ void flash_LEDs(){
 
 SimplePatternList gPatterns = {confetti}; //sinelon
 
-// void noteOn(byte channel, byte pitch, byte velocity) {
-//     midiEventPacket_t noteOn = {0x09, 0x90 | channel, pitch, velocity};
-//     MidiUSB.sendMIDI(noteOn);
-//     timeout = 0; // Reset timer when input detected gCurrentPatternNumber = 0; //set pattern to spots
-// }
-// void noteOff(byte channel, byte pitch, byte velocity) {
-//     midiEventPacket_t noteOff = {0x08, 0x80 | channel, pitch, velocity};
-//     MidiUSB.sendMIDI(noteOff);
-//     timeout = 0; // Reset timer when input detected gCurrentPatternNumber = 0; //set pattern to spots
+
+// Send MIDI note ON
+void midiNoteOn(byte note, byte midiVelocity)
+{
+  Serial.write(NOTE_ON_CMD);
+  Serial.write(note);
+  Serial.write(midiVelocity);
+}
+
+//Send MIDI note OFF
+void midiNoteOff(byte note, byte midiVelocity)
+{
+  Serial.write(NOTE_OFF_CMD);
+  Serial.write(note);
+  Serial.write(midiVelocity);
+}
+
+// Send MIDI CC
+void midiCC(byte cc, byte midiValue)
+{
+  Serial.write(CC_CMD);
+  Serial.write(cc);
+  Serial.write(midiValue);
+}
+
+void updateButtons() {
+
+  for (int i = 0; i < NUM_BUTTONS; i++) {
+      int state = Buttons[i]->getButtonState();
+      
+      //  Button is pressed     
+      if (state == 0) 
+      {
+         midiNoteOn(Buttons[i]->Note,127);
+      }
+  
+      //  Button is not pressed
+      if (state == 1) 
+  	  {
+  		midiNoteOff(Buttons[i]->Note,0); 
+      }
+  }
+}
+
+void updateKnobs() {
+
+  for (int i = 0; i < NUM_KNOBS; i++) {
+      int state = Knobs[i]->getKnobState();
+
+      midiCC(Knobs[i]->CC, map(state, 0, 1024, 0, 127));
+      
+  }
+}
+
+
+// void RGB_color(int red_light_value, int green_light_value, int blue_light_value)
+//  {
+//   analogWrite(red_light_pin, red_light_value);
+//   analogWrite(green_light_pin, green_light_value);
+//   analogWrite(blue_light_pin, blue_light_value);
 // }
 
-// void controlChange(byte channel, byte control, byte value) {
-//     midiEventPacket_t event = {0x0B, 0xB0 | channel, control, value};
-//     MidiUSB.sendMIDI(event);
-//     // timeout = 0; //Reset timer when input detected
-// }
+
+
+void setup() {
+    Serial.begin(115200);
+    FastLED.addLeds<NEOPIXEL, LED_PIN_BOTTOM>(ledsBottom, NUM_LEDS_BOTTOM); // Bottom leds
+    FastLED.addLeds<NEOPIXEL, LED_PIN_TOP>(ledsTop, NUM_LEDS_TOP);
+
+    FastLED.setBrightness(MAX_BRIGHTNESS);
+}
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
@@ -170,92 +212,9 @@ void nextPattern()
     gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE(gPatterns);
 }
 
-int debounce(int reading, int lastButtonState){
-    // Variables will change:
-    int ledState = HIGH;         // the current state of the output pin
-    int buttonState = reading;             // the current reading from the input pin
-
-    // the following variables are unsigned longs because the time, measured in
-    // milliseconds, will quickly become a bigger number than can be stored in an int.
-    unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
-    unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
-
-        if (reading != lastButtonState) {
-        // reset the debouncing timer
-        lastDebounceTime = millis();
-    }
-
-    if ((millis() - lastDebounceTime) > debounceDelay) {
-        // whatever the reading is at, it's been there for longer than the debounce
-        // delay, so take it as the actual current state:
-
-        // if the button state has changed:
-        if (reading != buttonState) {
-        buttonState = reading;
-
-        // only toggle the LED if the new button state is HIGH
-        if (buttonState == HIGH) {
-            ledState = !ledState;
-        }
-        }
-    }
-    return reading;
-}
-
-void read_knobs() {
-    t_midiMsg midiCC;
-
-    analogInputs[0] = analogRead(1);
-
-    for (int i=0; i < NUM_ANALOG_INPUTS; i++){
-        if(analogInputsPrev[i] != analogInputs[i]) {
-            // Serial.println("KNOB: "+ String(i) + " - " + String(analogInputs[i]));
-            
-            midiCC.msg.command = MIDI_COMMAND_CONTROL_CHANGE;
-            midiCC.msg.channel = 1;
-            midiCC.msg.data2   = i;
-            midiCC.msg.data3   = analogInputs[i]; /* Velocity */
-
-           /* Send cc */
-           Serial.write(midiCC.raw, sizeof(midiCC));
-        }
-    }
-
-    analogInputsPrev[0] = analogInputs[0];
-
-}
-
-
-
-
-void read_buttons() {
-    t_midiMsg midiNote;
-    // read buttons
-    buttons[0] = digitalRead(PB_1);
-    buttons[1] = digitalRead(PB_2);
-    buttons[2] = digitalRead(PB_3);       
-    buttons[3] = digitalRead(PB_4); 
-    // buttons[4] = digitalRead(PB_5); // This one is fucked in the wiring
-    buttons[5] = digitalRead(PB_6);
-
-    for (int i=0; i < NUM_BUTTONS; i++){
-        if(buttonsPrev[i] != buttons[i]){
-            // Serial.println("Button: "+ String(i+1) + " - " + String(buttons[i]));
-            midiNote.msg.command = MIDI_COMMAND_CONTROL_CHANGE;
-            midiNote.msg.channel = 1;
-            midiNote.msg.data2   = 66;
-            midiNote.msg.data3   = 0; /* Velocity */
-
-           /* Send cc */
-           Serial.write(midiNote.raw, sizeof(midiNote));
-        }
-        buttonsPrev[i] = buttons[i];
-    }
-
-}
-
 void loop() {
-    // Call the current pattern function once, updating the 'leds' array
+
+     // Call the current pattern function once, updating the 'leds' array
     gPatterns[gCurrentPatternNumber]();
 
     // send the 'leds' array out to the actual LED strip
@@ -265,8 +224,6 @@ void loop() {
 
     // do some periodic updates
     EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
-
-    // check_all_buttons();
-    read_buttons();
-    read_knobs();
+    updateButtons();
+    updateKnobs();
 }
