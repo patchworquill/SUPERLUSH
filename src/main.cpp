@@ -4,16 +4,16 @@
 
 
 //------Notes-------------
-#define NOTE_ONE 0
-#define NOTE_TWO 12
-#define NOTE_THREE 24
-#define NOTE_FOUR 36
-#define NOTE_FIVE 48
-#define NOTE_SIX 60
-#define NOTE_SEVEN 72
-#define NOTE_EIGHT 84
-#define NOTE_NINE 96
-#define NOTE_TEN 108
+#define NOTE_ONE 36
+#define NOTE_TWO 37 // Over trigger
+#define NOTE_THREE 38 // Over trigging
+#define NOTE_FOUR 39
+#define NOTE_FIVE 40
+#define NOTE_SIX 41
+#define NOTE_SEVEN 42
+#define NOTE_EIGHT 43
+#define NOTE_NINE 44
+#define NOTE_TEN 45
 
 #define NOTE_ON_CMD 0x90
 #define NOTE_OFF_CMD 0x80
@@ -119,7 +119,7 @@ void sinelon()
 }
 
 void flash_LEDs(){
-    for(int i = 0; i < 44; i++){
+    for(int i = 0; i < NUM_LEDS_TOP; i++){
         ledsBottom[i + 3] += CHSV( gHue + random8(64), 230, 200);
         ledsBottom[i + 3 - 1] += CHSV( gHue + random8(64), 230, 20);
         ledsBottom[i + 3 + 1] += CHSV( gHue + random8(64), 230, 20);
@@ -130,8 +130,7 @@ void flash_LEDs(){
     }
 }
 
-SimplePatternList gPatterns = {confetti}; //sinelon
-
+SimplePatternList gPatterns = {confetti, sinelon}; //sinelon
 
 // Send MIDI note ON
 void midiNoteOn(byte note, byte midiVelocity)
@@ -165,6 +164,9 @@ void updateButtons() {
       //  Button is pressed     
       if (state == 0) 
       {
+        //  Serial.println("Button: ");
+        //  Serial.print(i);
+        //  Serial.print("\nON");
          midiNoteOn(Buttons[i]->Note,127);
       }
   
@@ -181,49 +183,48 @@ void updateKnobs() {
   for (int i = 0; i < NUM_KNOBS; i++) {
       int state = Knobs[i]->getKnobState();
 
-      midiCC(Knobs[i]->CC, map(state, 0, 1024, 0, 127));
-      
+      if (state == 2000){
+        return;
+      } else {
+        // Serial.print("KNOB:");
+        // Serial.println(state);
+        // Serial.println(map(state, 0, 1024, 0, 127));
+        midiCC(Knobs[i]->CC, map(state, 0, 1024, 0, 127));
+      }
   }
 }
 
 
-// void RGB_color(int red_light_value, int green_light_value, int blue_light_value)
-//  {
-//   analogWrite(red_light_pin, red_light_value);
-//   analogWrite(green_light_pin, green_light_value);
-//   analogWrite(blue_light_pin, blue_light_value);
-// }
-
-
-
 void setup() {
     Serial.begin(115200);
+    Serial.println("Initializing...");
+
     FastLED.addLeds<NEOPIXEL, LED_PIN_BOTTOM>(ledsBottom, NUM_LEDS_BOTTOM); // Bottom leds
     FastLED.addLeds<NEOPIXEL, LED_PIN_TOP>(ledsTop, NUM_LEDS_TOP);
 
     FastLED.setBrightness(MAX_BRIGHTNESS);
+    Serial.println("Complete.");
 }
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
-void nextPattern()
-{
+void nextPattern(){
     // add one to the current pattern number, and wrap around at the end
     gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE(gPatterns);
 }
 
-void loop() {
-
+void loop(){
      // Call the current pattern function once, updating the 'leds' array
     gPatterns[gCurrentPatternNumber]();
 
     // send the 'leds' array out to the actual LED strip
     FastLED.show();  
     // insert a delay to keep the framerate modest
-    //FastLED.delay(1000/FRAMES_PER_SECOND); 
+    FastLED.delay(1000/FRAMES_PER_SECOND);
 
     // do some periodic updates
     EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
+
     updateButtons();
     updateKnobs();
 }

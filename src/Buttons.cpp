@@ -18,7 +18,7 @@ int Button::getButtonState()
       return 5;
    if(state!= _lastState)
    {
-        if(state == 0)
+         if(state == 0)
          {
             returnValue = 0;       
          }
